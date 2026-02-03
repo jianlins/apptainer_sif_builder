@@ -64,24 +64,25 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y p7zip-full
 
-      - name: Split SIF into 2GiB volumes
+      - name: Split SIF into 1GiB volumes
         run: |
           SIF="${{ steps.sif_name.outputs.sif_name }}"
           BASENAME="${SIF%.sif}"
-          # Create 7z volumes of 2GiB each
+          # Create 7z volumes of 1GiB each
           7z a -t7z -v1024m "${BASENAME}.7z" "$SIF"
           ls -lh
+          pwd
 
       - name: Create Release and Upload Parts
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.event.inputs.tag_name }}
           files: |
-            *.7z
+            *.7z.*
           body: |
             Built from Docker image: `${{ steps.sif_name.outputs.docker_image }}`
 
-            Files are split 7z volumes (2GiB each). Download all parts and run:
+            Files are split 7z volumes (1GiB each). Download all parts and run:
 
             ```bash
             cat ${BASENAME}.7z.* > all.7z   # or use 7z directly on the first part
