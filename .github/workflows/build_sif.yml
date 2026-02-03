@@ -4,19 +4,36 @@ on:
   workflow_dispatch:
     inputs:
       docker_image:
-        description: 'Docker image URL (e.g., nvidia/cuda:12.2.0-devel-ubuntu22.04)'
+        description: 'Docker image URL (e.g., nvcr.io/nvidia/vllm:26.01-py3)'
         required: true
         default: 'ubuntu:22.04'
+      tag_name:
+        description: 'Tag to create (e.g. v0.1.0)'
+        required: true
+        default: 'v0.1.0'
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write    # needed to push tags and create releases
     
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # needed so we can create tags on full history
       
+      - name: Setup Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create and push tag
+        run: |
+          TAG="${{ github.event.inputs.tag_name }}"
+          git tag "$TAG"
+          git push origin "$TAG"
+
       - name: Setup Apptainer
         uses: eWaterCycle/setup-apptainer@v2
         with:
@@ -31,20 +48,18 @@ jobs:
           
           echo "docker_image=$DOCKER_IMAGE" >> $GITHUB_OUTPUT
           echo "sif_name=$SIF_FILE" >> $GITHUB_OUTPUT
-          
-          echo "🐳 Docker: $DOCKER_IMAGE"
-          echo "📦 SIF File: $SIF_FILE"
       
       - name: Build SIF
         run: |
-          apptainer build --fakeroot ${{ steps.sif_name.outputs.sif_name }} \
-            docker://${{ steps.sif_name.outputs.docker_image }}
-      
-      - name: Upload to Release
+          apptainer build --fakeroot "${{ steps.sif_name.outputs.sif_name }}" \
+            "docker://${{ steps.sif_name.outputs.docker_image }}"
+
+      - name: Create Release and Upload SIF
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: ${{ github.event.inputs.tag_name }}
           files: ${{ steps.sif_name.outputs.sif_name }}
           body: |
-            📦 **Built from Docker image:** `${{ steps.sif_name.outputs.docker_image }}`
+            Built from Docker image: `${{ steps.sif_name.outputs.docker_image }}`
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
