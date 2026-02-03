@@ -1,0 +1,50 @@
+name: Build and Release Apptainer SIF
+
+on:
+  workflow_dispatch:
+    inputs:
+      docker_image:
+        description: 'Docker image URL (e.g., nvidia/cuda:12.2.0-devel-ubuntu22.04)'
+        required: true
+        default: 'ubuntu:22.04'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Apptainer
+        uses: eWaterCycle/setup-apptainer@v2
+        with:
+          apptainer-version: 1.3.6
+      
+      - name: Generate SIF filename
+        id: sif_name
+        run: |
+          DOCKER_IMAGE="${{ github.event.inputs.docker_image }}"
+          IMAGE_PART=$(echo "$DOCKER_IMAGE" | sed 's|^.*\/||')
+          SIF_FILE=$(echo "$IMAGE_PART" | sed 's/:/-/g').sif
+          
+          echo "docker_image=$DOCKER_IMAGE" >> $GITHUB_OUTPUT
+          echo "sif_name=$SIF_FILE" >> $GITHUB_OUTPUT
+          
+          echo "🐳 Docker: $DOCKER_IMAGE"
+          echo "📦 SIF File: $SIF_FILE"
+      
+      - name: Build SIF
+        run: |
+          apptainer build --fakeroot ${{ steps.sif_name.outputs.sif_name }} \
+            docker://${{ steps.sif_name.outputs.docker_image }}
+      
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ${{ steps.sif_name.outputs.sif_name }}
+          body: |
+            📦 **Built from Docker image:** `${{ steps.sif_name.outputs.docker_image }}`
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
