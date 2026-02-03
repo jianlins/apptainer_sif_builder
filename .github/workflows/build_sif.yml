@@ -8,7 +8,7 @@ on:
         required: true
         default: 'ubuntu:22.04'
       tag_name:
-        description: 'Tag to create (e.g. v0.1.0)'
+        description: 'Tag to use for the release (e.g., v0.1.0)'
         required: true
         default: 'v0.1.0'
 
@@ -16,23 +16,27 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write    # needed to push tags and create releases
+      contents: write
     
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # needed so we can create tags on full history
-      
-      - name: Setup Git identity
+          fetch-depth: 0
+
+      - name: Configure git
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Create and push tag
+      - name: Create and push tag (if missing)
         run: |
           TAG="${{ github.event.inputs.tag_name }}"
-          git tag "$TAG"
-          git push origin "$TAG"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists"
+          else
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi
 
       - name: Setup Apptainer
         uses: eWaterCycle/setup-apptainer@v2
@@ -45,21 +49,43 @@ jobs:
           DOCKER_IMAGE="${{ github.event.inputs.docker_image }}"
           IMAGE_PART=$(echo "$DOCKER_IMAGE" | sed 's|^.*\/||')
           SIF_FILE=$(echo "$IMAGE_PART" | sed 's/:/-/g').sif
-          
           echo "docker_image=$DOCKER_IMAGE" >> $GITHUB_OUTPUT
           echo "sif_name=$SIF_FILE" >> $GITHUB_OUTPUT
+          echo "Docker: $DOCKER_IMAGE"
+          echo "SIF: $SIF_FILE"
       
       - name: Build SIF
         run: |
           apptainer build --fakeroot "${{ steps.sif_name.outputs.sif_name }}" \
             "docker://${{ steps.sif_name.outputs.docker_image }}"
 
-      - name: Create Release and Upload SIF
+      - name: Install 7zip
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full
+
+      - name: Split SIF into 2GiB volumes
+        run: |
+          SIF="${{ steps.sif_name.outputs.sif_name }}"
+          BASENAME="${SIF%.sif}"
+          # Create 7z volumes of 2GiB each
+          7z a -t7z -v1024m "${BASENAME}.7z" "$SIF"
+          ls -lh
+
+      - name: Create Release and Upload Parts
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.event.inputs.tag_name }}
-          files: ${{ steps.sif_name.outputs.sif_name }}
+          files: |
+            *.7z
           body: |
             Built from Docker image: `${{ steps.sif_name.outputs.docker_image }}`
+
+            Files are split 7z volumes (2GiB each). Download all parts and run:
+
+            ```bash
+            cat ${BASENAME}.7z.* > all.7z   # or use 7z directly on the first part
+            7z x ${BASENAME}.7z.001         # extracts the .sif
+            ```
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
