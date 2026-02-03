@@ -6,11 +6,11 @@ on:
       docker_image:
         description: 'Docker image URL (e.g., nvcr.io/nvidia/vllm:26.01-py3)'
         required: true
-        default: 'ubuntu:22.04'
+        default: 'nvcr.io/nvidia/vllm:26.01-py3'
       tag_name:
         description: 'Tag to use for the release (e.g., v0.1.0)'
         required: true
-        default: 'v0.1.0'
+        default: 'vllm.26.01'
 
 jobs:
   build:
